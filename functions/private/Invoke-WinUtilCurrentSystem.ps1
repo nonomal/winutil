@@ -13,8 +13,18 @@ Function Invoke-WinUtilCurrentSystem {
     param(
         $CheckBox
     )
+    if ($CheckBox -eq "choco") {
+        $apps = (choco list | Select-String -Pattern "^\S+").Matches.Value
+        $filter = Get-WinUtilVariables -Type Checkbox | Where-Object {$psitem -like "WPFInstall*"}
+        $sync.GetEnumerator() | Where-Object {$psitem.Key -in $filter} | ForEach-Object {
+            $dependencies = @($sync.configs.applications.$($psitem.Key).choco -split ";")
+            if ($dependencies -in $apps) {
+                Write-Output $psitem.name
+            }
+        }
+    }
 
-    if ($checkbox -eq "winget"){
+    if ($checkbox -eq "winget") {
 
         $originalEncoding = [Console]::OutputEncoding
         [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -31,9 +41,9 @@ Function Invoke-WinUtilCurrentSystem {
         }
     }
 
-    if($CheckBox -eq "tweaks"){
+    if($CheckBox -eq "tweaks") {
 
-        if(!(Test-Path 'HKU:\')){New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS}
+        if(!(Test-Path 'HKU:\')) {$null = (New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS)}
         $ScheduledTasks = Get-ScheduledTask
 
         $sync.configs.tweaks | Get-Member -MemberType NoteProperty | ForEach-Object {
@@ -44,56 +54,57 @@ Function Invoke-WinUtilCurrentSystem {
             $scheduledtaskKeys = $sync.configs.tweaks.$Config.scheduledtask
             $serviceKeys = $sync.configs.tweaks.$Config.service
 
-            if($registryKeys -or $scheduledtaskKeys -or $serviceKeys){
+            if($registryKeys -or $scheduledtaskKeys -or $serviceKeys) {
                 $Values = @()
 
 
-                Foreach ($tweaks in $registryKeys){
-                    Foreach($tweak in $tweaks){
+                Foreach ($tweaks in $registryKeys) {
+                    Foreach($tweak in $tweaks) {
 
-                        if(test-path $tweak.Path){
+                        if(test-path $tweak.Path) {
                             $actualValue = Get-ItemProperty -Name $tweak.Name -Path $tweak.Path -ErrorAction SilentlyContinue | Select-Object -ExpandProperty $($tweak.Name)
                             $expectedValue = $tweak.Value
-                            if ($expectedValue -notlike $actualValue){
+                            if ($expectedValue -notlike $actualValue) {
                                 $values += $False
                             }
+                        } else {
+                            $values += $False
                         }
                     }
                 }
 
-                Foreach ($tweaks in $scheduledtaskKeys){
-                    Foreach($tweak in $tweaks){
+                Foreach ($tweaks in $scheduledtaskKeys) {
+                    Foreach($tweak in $tweaks) {
                         $task = $ScheduledTasks | Where-Object {$($psitem.TaskPath + $psitem.TaskName) -like "\$($tweak.name)"}
 
-                        if($task){
+                        if($task) {
                             $actualValue = $task.State
                             $expectedValue = $tweak.State
-                            if ($expectedValue -ne $actualValue){
+                            if ($expectedValue -ne $actualValue) {
                                 $values += $False
                             }
                         }
                     }
                 }
 
-                Foreach ($tweaks in $serviceKeys){
-                    Foreach($tweak in $tweaks){
+                Foreach ($tweaks in $serviceKeys) {
+                    Foreach($tweak in $tweaks) {
                         $Service = Get-Service -Name $tweak.Name
 
-                        if($Service){
+                        if($Service) {
                             $actualValue = $Service.StartType
                             $expectedValue = $tweak.StartupType
-                            if ($expectedValue -ne $actualValue){
+                            if ($expectedValue -ne $actualValue) {
                                 $values += $False
                             }
                         }
                     }
                 }
 
-                if($values -notcontains $false){
+                if($values -notcontains $false) {
                     Write-Output $Config
                 }
             }
         }
     }
 }
-
