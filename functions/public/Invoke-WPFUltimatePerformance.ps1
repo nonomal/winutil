@@ -2,77 +2,74 @@ Function Invoke-WPFUltimatePerformance {
     <#
 
     .SYNOPSIS
-        Creates or removes the Ultimate Performance power scheme
+        Enables or disables the Ultimate Performance power scheme based on its GUID.
 
     .PARAMETER State
-        Indicates whether to enable or disable the Ultimate Performance power scheme
+        Specifies whether to "Enable" or "Disable" the Ultimate Performance power scheme.
 
     #>
     param($State)
-    Try{
 
-        if($state -eq "Enabled"){
-            # Define the name and GUID of the power scheme
-            $powerSchemeName = "Ultimate Performance"
-            $powerSchemeGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
+    try {
+        # GUID of the Ultimate Performance power plan
+        $ultimateGUID = "e9a42b02-d5df-448d-aa00-03f14749eb61"
 
-            # Get all power schemes
-            $schemes = powercfg /list | Out-String -Stream
+        if ($State -eq "Enable") {
+            # Duplicate the Ultimate Performance power plan using its GUID
+            $duplicateOutput = powercfg /duplicatescheme $ultimateGUID
 
-            # Check if the power scheme already exists
-            $ultimateScheme = $schemes | Where-Object { $_ -match $powerSchemeName }
+            $guid = $null
+            $nameFromFile = "ChrisTitus - Ultimate Power Plan"
+            $description = "Ultimate Power Plan, added via WinUtils"
 
-            if ($null -eq $ultimateScheme) {
-                Write-Host "Power scheme '$powerSchemeName' not found. Adding..."
-
-                # Add the power scheme
-                powercfg /duplicatescheme $powerSchemeGuid
-                powercfg -attributes SUB_SLEEP 7bc4a2f9-d8fc-4469-b07b-33eb785aaca0 -ATTRIB_HIDE
-                powercfg -setactive $powerSchemeGuid
-                powercfg -change -monitor-timeout-ac 0
-
-
-                Write-Host "Power scheme added successfully."
+            # Extract the new GUID from the duplicateOutput
+            foreach ($line in $duplicateOutput) {
+                if ($line -match "\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b") {
+                    $guid = $matches[0]  # $matches[0] will contain the first match, which is the GUID
+                    Write-Output "GUID: $guid has been extracted and stored in the variable."
+                    break
+                }
             }
-            else {
-                Write-Host "Power scheme '$powerSchemeName' already exists."
+
+            if (-not $guid) {
+                Write-Output "No GUID found in the duplicateOutput. Check the output format."
+                exit 1
+            }
+
+            # Change the name of the power plan and set its description
+            $changeNameOutput = powercfg /changename $guid "$nameFromFile" "$description"
+            Write-Output "The power plan name and description have been changed. Output:"
+            Write-Output $changeNameOutput
+
+            # Set the duplicated Ultimate Performance plan as active
+            $setActiveOutput = powercfg /setactive $guid
+            Write-Output "The power plan has been set as active. Output:"
+            Write-Output $setActiveOutput
+
+            Write-Host "> Ultimate Performance plan installed and set as active."
+
+        } elseif ($State -eq "Disable") {
+            # Check if the Ultimate Performance plan is installed by GUID
+            $installedPlan = (powercfg -list | Select-String -Pattern "ChrisTitus - Ultimate Power Plan").Line.Split()[3]
+
+            if ($installedPlan) {
+                # Extract the GUID of the installed Ultimate Performance plan
+                $ultimatePlanGUID = $installedPlan.Line.Split()[3]
+
+                # Set a different power plan as active before deleting the Ultimate Performance plan
+                $balancedPlanGUID = 381b4222-f694-41f0-9685-ff5bb260df2e
+                powercfg -setactive $balancedPlanGUID
+
+                # Delete the Ultimate Performance plan by GUID
+                powercfg -delete $ultimatePlanGUID
+
+                Write-Host "Ultimate Performance plan has been uninstalled."
+                Write-Host "> Balanced plan is now active."
+            } else {
+                Write-Host "Ultimate Performance plan is not installed."
             }
         }
-        elseif($state -eq "Disabled"){
-                # Define the name of the power scheme
-                $powerSchemeName = "Ultimate Performance"
-
-                # Get all power schemes
-                $schemes = powercfg /list | Out-String -Stream
-
-                # Find the scheme to be removed
-                $ultimateScheme = $schemes | Where-Object { $_ -match $powerSchemeName }
-
-                # If the scheme exists, remove it
-                if ($null -ne $ultimateScheme) {
-                    # Extract the GUID of the power scheme
-                    $guid = ($ultimateScheme -split '\s+')[3]
-
-                    if($null -ne $guid){
-                        Write-Host "Found power scheme '$powerSchemeName' with GUID $guid. Removing..."
-
-                        # Remove the power scheme
-                        powercfg /delete $guid
-
-                        Write-Host "Power scheme removed successfully."
-                    }
-                    else {
-                        Write-Host "Could not find GUID for power scheme '$powerSchemeName'."
-                    }
-                }
-                else {
-                    Write-Host "Power scheme '$powerSchemeName' not found."
-                }
-
-            }
-
-    }
-    Catch{
-        Write-Warning $psitem.Exception.Message
+    } catch {
+        Write-Error "Error occurred: $_"
     }
 }

@@ -20,13 +20,30 @@ function Test-WinUtilPackageManager {
     $status = "not-installed"
 
     if ($winget) {
-        # Install Winget if not detected
-        $wingetExists = Get-Command -Name winget -ErrorAction SilentlyContinue
+        # Check if Winget is available while getting it's Version if it's available
+        $wingetExists = $true
+        try {
+            $wingetInfo = winget --info
+            # Extract the package version from the output
+            $wingetVersionFull = ($wingetInfo | Select-String -Pattern 'Microsoft\.DesktopAppInstaller v\d+\.\d+\.\d+\.\d+').Matches.Value
+            if ($wingetVersionFull) {
+                $wingetVersionFull = $wingetVersionFull.Split(' ')[-1].TrimStart('v')
+            } else {
+                # Fallback in case the pattern isn't found
+                $wingetVersionFull = ($wingetInfo | Select-String -Pattern 'Package Manager v\d+\.\d+\.\d+').Matches.Value.Split(' ')[-1]
+            }
+        } catch [System.Management.Automation.CommandNotFoundException], [System.Management.Automation.ApplicationFailedException] {
+            Write-Warning "Winget was not found due to un-availablity reasons"
+            $wingetExists = $false
+        } catch {
+            Write-Warning "Winget was not found due to un-known reasons, The Stack Trace is:`n$($psitem.Exception.StackTrace)"
+            $wingetExists = $false
+        }
 
-        if ($wingetExists) {
-            # Check Winget Version
-            $wingetVersionFull = (winget --version) # Full Version without 'v'.
-
+        # If Winget is available, Parse it's Version and give proper information to Terminal Output.
+    # If it isn't available, the return of this funtion will be "not-installed", indicating that
+        # Winget isn't installed/available on The System.
+    if ($wingetExists) {
             # Check if Preview Version
             if ($wingetVersionFull.Contains("-preview")) {
                 $wingetVersion = $wingetVersionFull.Trim("-preview")
@@ -39,13 +56,14 @@ function Test-WinUtilPackageManager {
             # Check if Winget's Version is too old.
             $wingetCurrentVersion = [System.Version]::Parse($wingetVersion.Trim('v'))
             # Grabs the latest release of Winget from the Github API for version check process.
-            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/microsoft/Winget-cli/releases/latest" -Method Get -ErrorAction Stop
-            $wingetLatestVersion = [System.Version]::Parse(($response.tag_name).Trim('v')) #Stores version number of latest release.
-            $wingetOutdated = $wingetCurrentVersion -lt $wingetLatestVersion
+            $response = winget search -e Microsoft.AppInstaller --accept-source-agreements
+            $wingetLatestVersion = ($response | Select-String -Pattern '\d+\.\d+\.\d+\.\d+').Matches.Value
+            Write-Host "Latest Search Version: $wingetLatestVersion" -ForegroundColor White
+            Write-Host "Current Installed Version: $wingetCurrentVersion" -ForegroundColor White
+            $wingetOutdated = $wingetCurrentVersion -lt [System.Version]::Parse($wingetLatestVersion)
             Write-Host "===========================================" -ForegroundColor Green
             Write-Host "---        Winget is installed          ---" -ForegroundColor Green
             Write-Host "===========================================" -ForegroundColor Green
-            Write-Host "Version: $wingetVersionFull" -ForegroundColor White
 
             if (!$wingetPreview) {
                 Write-Host "    - Winget is a release version." -ForegroundColor Green
@@ -56,12 +74,11 @@ function Test-WinUtilPackageManager {
             if (!$wingetOutdated) {
                 Write-Host "    - Winget is Up to Date" -ForegroundColor Green
                 $status = "installed"
-            }
-            else {
+            } else {
                 Write-Host "    - Winget is Out of Date" -ForegroundColor Red
                 $status = "outdated"
             }
-        } else {        
+        } else {
             Write-Host "===========================================" -ForegroundColor Red
             Write-Host "---      Winget is not installed        ---" -ForegroundColor Red
             Write-Host "===========================================" -ForegroundColor Red
